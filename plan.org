@@ -1,0 +1,199 @@
+* The ~main()~ idea
+
+ It's quite simple, really: have a little loop that takes can present, either forward or backward, the slides.
+
+ Something like:
+ 
+#+begin_src C
+  int main(){
+
+    unsigned char presentation[PRESENTATION_SLIDES];
+
+    do{
+
+      input = probe_input();
+
+      if(input == SLIDE_NEXT || input == SLIDE_BACK){
+        present_slide(input);
+      }
+
+    } while(input != QUIT_PRESENTATION)
+    
+    return 0;
+  }
+#+end_src
+
+ But some things are still to be added:
+ - How much time does the loop wait to probe the input?
+ - How do we get the presentation /in/ the program?
+ - How are implemented:
+   - ~probe_input()~
+   - ~present_slide()~
+
+ And so on and so on...
+
+* Putting the presentation in the program
+
+ Since C23 (and, funnily enough, we have C23 available to us!), there's the ~#embed~ directive, where we can just throw a bunch of data in the program at compile time. Neat!
+
+ But, the PS2 can't really do PNG natively, also, it compresses poorly (for our use case) and the exports from many slide programs (such as MS PowerPoint, Google Slides, LibreOffice [name] and Canva) are too good a resolution for our dinky little NTSC console.
+
+ The PS2 has native MPEG2 decompression. The standard compresses well enough and has sufficient resolution, but it's video only. The fun thing is that what's a slide if not a singe key frame in a video?
+
+ The MPEG2 engine doesn't give us that granular control to choose when to present key frames (at least the SDK doesn't). So, what if we throw every slide at the engine as a video with a single key frame that just so happens to be a slide?
+
+ A little hacky, but good enough. 
+
+ The presentation itself can be embedded in the program, no problem. When (properly) converted by FFMPEG, each slide gets, at most, 300Kb in size, if too noisy. The simpler ones, with no images, very little color variation, compress even better. Mostly due to the PS2's (now) low resolution.
+
+ So, if we consider:
+   - Worst case scenario of all slides being noisy;
+   - The full program, sans slides, being about a whole megabyte in size;
+   - The system memory of 32Mb, where all will be stored;
+
+ We can have about a hundred slides in a deck and have about another megabyte to spare. That's really nice!
+
+ But, how do we actually put the presentation /in/ the program? Sure, the ~#embed~ directive is cool and all, but it can't scan the directory. You can't do a src_C{#embed slide_*.png} and hope it'll work. So, we need to have a method to the madness.
+
+** Code generation
+
+ I want to use my little program like this:
+   - There's a directory where all my .png slides live, since when I make changes to my presentation, I just click a button and all of them are dumped in there;
+   - Then, when all slides are in the directory, I want to have another one (it could be inside it) in which FFMPEG puts the result of the conversion;
+   - And then, given all the video-fied files in the FFMPEG's output directory, make an ~#embed~ directive in a header file called ~presentation.h~.
+
+ I could use an ~X Macro~, but I don't know how to use them well and I don't know if I can "double macro", like:
+ 
+#+begin_src C
+  #define SLIDES \
+    X(slide_1.png) \
+    X(slide_2.png) \
+    //...
+    X(slide_n.png)
+
+  // and go about this like so:
+
+  #define X(slide) #embed <slide>
+     SLIDES
+  #undef X
+#+end_src
+
+ I wish the standard let us do with ~#embed~ what we do with include guards. Oh well...
+
+ So, since we can't do this (yet), we must resort to a little hacky code generation solution.
+
+ And since we have (almost) all flexibility in the world, we can generate something like this:
+
+#+begin_src C
+  #define PRESENTATION_SIZE N
+
+  typedef struct {
+
+    size_t slide_number;
+    const unsigned char data[];
+    
+  } slide;
+
+  // and then, we make it generate declarations for all slides
+  // such as
+
+  // slide slide_0 = {
+  //   slide_number = 0;
+  //   data = #embed <slide_0.m2v>
+  // }
+  //
+  // and do on
+
+  slide slide_deck[PRESENTATION_SIZE] = {
+
+    // go at all slides like
+    // slide_0,
+    // slide_1,
+    // ...
+
+  }
+#+end_src
+
+ To achieve this, a simple Python script will do:
+ 
+#+begin_src python
+  from pathlib import Path
+
+  output_path = Path(r'./output')
+
+  video_paths = [video for video in output_path.iterdir() if 'm2v' in video.name]
+
+  with open('slides.h', 'w') as slide_header:
+      slide_header.write(f"#define SLIDE_AMOUNT {len(video_paths)}\n\n")
+      
+      for video_number, video in enumerate(video_paths):
+          slide_header.write(f"static const unsigned char slide_{video_number}[] = ")
+          slide_header.write("{\n")
+          slide_header.write(f'#embed "{str(video.absolute())}"\n')
+          slide_header.write("};\n\n")
+
+      slide_header.write("static const unsigned char* slides[SLIDE_AMOUNT] = {\n")
+      for video_number, _ in enumerate(video_paths):
+          slide_header.write(f"slide_{video_number}, \n")
+      slide_header.write("};")
+#+end_src
+
+ It should output something like this, which is different from what we wanted, but this is still quite straightforward, and since we are not making it by hand, it's ok: 
+
+ #+begin_src C
+  #define SLIDE_AMOUNT 3
+
+  static const unsigned char slide_0[] = {
+  #embed "/home/coscal/output/bar"
+  };
+
+  static const unsigned char slide_1[] = {
+  #embed "/home/coscal/output/baz"
+  };
+
+  static const unsigned char slide_2[] = {
+  #embed "/home/coscal/output/foo"
+  };
+
+  static const unsigned char* slides[SLIDE_AMOUNT] = {
+  slide_0, 
+  slide_1, 
+  slide_2, 
+  };
+#+end_src
+
+ We could do objcopy, but this is neater and compliant. Also, we can get this done with the python script, not needing to mess with binary fiddling to a weird target arch and/or linking.
+
+ Also, we get the nicety of just getting a tidy loop to stream data to the Graphic Synthesizer via de DMA controller.
+
+ Now, we must have a way to convert the PNG slides to MPEG2.
+
+** FFMPEG to the rescue
+
+ I truly cannot tell exactly how it does it, but the one-liner is this:
+
+#+begin_src bash
+  ffmpeg -i slide.png -c:v mpeg2video -pix_fmt yuv420p -s 640x512 -qscale:v 2 -vframes 1 -f mpeg2video slide.m2v
+#+end_src
+
+ I did use AI to generate this. But we do change it a little as a simple script:
+
+#+begin_src bash
+  #!/bin/bash
+
+  ffmpeg -i ./input/*.png -c:v mpeg2video -pix_fmt yuv420p -s 640x512 -qscale:v 2 -vframes 1 -f mpeg2video ./output/*.m2v
+#+end_src
+
+ We'll just need to fix the resolution, since this is a PAL test, but the console we'll run will (probably) be NTSC.
+
+ Now, for the presentation itself, is a wrap. We don't need a lot more in putting the presentation in the program. The problem is the rest. Or rather, how we make the console actualy show the frame (correctly) on the screen.
+
+* The descent into PS2SDK
+
+ We'll, again, go from easier to harder. Although quite some of it is hard, it's far from impossible. It's just time consuming.
+
+** Handling input
+
+ 
+
+** Frames, decompression and the GS
