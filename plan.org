@@ -192,8 +192,101 @@
 
  We'll, again, go from easier to harder. Although quite some of it is hard, it's far from impossible. It's just time consuming.
 
+ But first, we need to make a little tangent on how we make it all work.
+
+** Installing the toolchain
+
+ I'll take the Docker route, as this has been the one with the least friction.
+
+ The /actual/ repo is here: [[https://github.com/ps2dev/ps2dev][PS2 Dev]]. The image is hosted here: [[https://hub.docker.com/r/ps2dev/ps2dev][PS2 DEV Docker Image]].
+
+ We just do a good ol' src_bash{docker pull ps2dev/ps2dev} and hope for the best. You might need to do the rigmarole that almost every time you install container software: enable containerd, downlaod Docker or podman, so and so.
+
+ Don't forget to get your permissions and groups correctly!
+
+ With a src_bash{docker images}, we should see if the image downloaded correctly.
+
+ I do not know enough Docker so I can do a little one-liner that helps us, but I know how to coax a LLM into telling me how to. So, here it is:
+
+ src_bash{docker run --rm -v "$(pwd)":/src ps2dev/ps2dev make}
+
+ I might do just two little things with this one:
+ - Encapsulate it into a neat little script, so I don't have future headaches;
+ - Make a little project folder, since we must keep everything a little tidier;
+
+ Also, I'll show thorugh this project that we'll be squatting some Makefiles (as I'm not near as proficient as I should), as well as heavily modifying examples. This is mostly due to how the PS2's extremely heterogenous architecture makes us need to compile a lot of tiny pieces of software for it's many little moving parts.
+
+ As an example, we need to wrangle a few soon-to-be-our-best-friends:
+ - The Emotion Engine (EE), coloquially named the CPU;
+ - The Image Processing Unit (IPU), so we can +abuse+ creatively use the MPEG2 decoder;
+ - The Direct Memory Access Controller (DMAC or just DMA), so we can use the bus to send data around it's many co-processors;
+ - The Graphics Synthesizer (GS), the quasi-GPU of the console. We'll also have, sometimes, something called the GIF, which is just the Graphics Interface. I'll be a character when talking about configuring the DMA.
+ - The Input/Output Processor (IOP), a PS1 in it's own right, but demoted to a southbridge. We'll need it to read the controller and USB, so we can get some input in the system.
+
+ So far, so good!
+
+ You can argue that the PS2 is a great lesson in heterogenous compute. Or, rather, a very pedagogical. It's fun to think that almost nothing in it is homogenous. Even the vector processors (which we'll won't be explicitly using today) can be reprogrammed, on a bus level, so they can act as SIMD, as a pipeline, as FPUs and a bunch of other stuff.
+
+ And even if the console does not have a multi-core CPU, it's still interesting to chip your teeth at the heterogenous compute world with this platform.
+
+ So, getting back to the problem at hand, we'll be populating little by little the project folder, so we can ship away at the problem. I do believe that the input subsystem is the easiest to try, since we'll "just" need to probe for controllers' inputs and take some action upon the result.
+
+ The big problem is going to be decompressing the MPEG2 video and properly sending the macroblocks.
+
+ So, let's get to it!
+
 ** Handling input
 
+  First, let's check if the tooling is on the bench.
+
+  You can do this with my preferred method: interactvely exploring in a container with src_bash{docker run -it --rm ps2dev/ps2dev}, probing and prodding to your heart's content.
+
+  Some highlights are:
+  - Look at the envvars with printenv, since a lot is defined for us;
+  - The $(PS2SDK)/Defs.make, since it has all the little definitions for our processor(s) toolchain(s)
+
+  By the way, you will need, if using the Docker image, do a little setup afterwards. Since it's Alpine based, you should follow the newer instructions in the [[https://github.com/ps2dev/ps2dev][Official PS2DEV GitHub]]. But here are the dependencies:
+
+  src_bash{apk add build-base cmake git texinfo flex bison gettext gmp-dev mpfr-dev mpc1-dev zlib-dev}
+
+  I was a puzzled about why I didn't have make (and I still am on why the image doesn't have /everything/ configured), but this seems to have solved it!
+
+*** Another digression (I'm sorry)
+
+ It seems that the Docker is borked. I get myself in a "no flag -mno-crt0" error when building the sample for a simple hello-world. I don't know why.
+
+ So, I'll get it into the system proper. At least I (hope I) can debug it better.
+
+ Or, if I digress even further (this is getting a little too deep now), I might be able to build the docker image and all will be nice and dandy.
+
+ I got the (I hope) more reliable [[https://github.com/playstation2-development/ps2dev-world][PS2 Dev World]] repo. It might be older, but it does what we need.
+
+ In the repo, we go to ~ps2sdk/ps2sdk-homebrew/docker~ and get a src_bash{docker build -t ps2sdk .}
+
+ It takes a while to compile, since a lot of dependencies from a lot of repos are being built.
+
+ It does break when trying to get the ps2stuff repo. It states that no targets were specified.
+
+ Well, we'll need to make a little Docker image of our own then! (I hate this so much)
  
+*** Not the image we want, but the image we need
+
+ Rather, we just need to go for a src_sh{apk add make} and all should work. I was just stressed...
+
+*** /Mea culpa/, sorta
+
+ Eat before you do any productive work.
+
+ That said, I /was/ compiling the wrong stuff. THe thing that actually works is the sample ~sample/debug/helloworld~, not the one(s) that is(are) in the samples folder itself.
+
+ That made me feel like it was all borked. It's all nice now. You can use the proper actual real original PS2 Dev Docker image.
+
+ So, with that working, we'll get some squatting done.
+
+* The program proper
+
+ So, since we got that out of the way, the system is quite straightforward. I'll just populate first the repo, so we can talk about our plan of first implementing the input, and then, the MPEG system.
+
+** The input system, IOP and RPC
 
 ** Frames, decompression and the GS
