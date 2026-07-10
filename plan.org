@@ -289,4 +289,45 @@
 
 ** The input system, IOP and RPC
 
+ We'll be using the ~pad~ example. We basically want to convert a few inputs into a ~NEXT_SLIDE~ and ~PREV_SLIDE~ enum.
+
+ The basic idea is that the IOP is a PS1 in it's own right. A whole MIPS R3000 processor. It provides some nice horsepower, as well as some fun functionality.
+
+ But, complexity does give us some drawbacks. Specially since we don't have an operating system to abstract this away for us. So, we must load from the EE the package that enables the DualShock controllers to do their thing.
+
+ The original idea still works:
+ - we initialize the controller before our main loop;
+ - the main loop starts
+   - in the loop, whenever there is an input, the program reacts with the correct slide to be shown;
+
+ So, take a look at the draft code below, and then, at the actual source.
+
+#+begin_src C
+  #include <presentation.h>
+
+  static char pad_buffer[256] __attribute__((aligned(64)));
+
+  static void setup_gamepad();
+
+  static int wait_gamepad();
+
+  enum SlideCommand gamepad_button();
+
+  void main(){
+
+    setup_gamepad();
+    
+    for(;;){
+
+      enum SlideCommand curr_command = gamepad_button();
+
+      present(curr_command);
+
+    }
+
+  }
+#+end_src
+
+ We'll get back to this in due time. Meanwhile, look at the source!
+
 ** Frames, decompression and the GS
