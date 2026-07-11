@@ -1,0 +1,110 @@
+#include <tamtypes.h>
+#include <kernel.h>
+#include <sifrpc.h>
+#include <loadfile.h>
+#include "libpad.h"
+
+#include <presentation.h>
+
+static char padBuf[256] __attribute__((aligned(64)));
+
+// We'll need these so if we have a controller that's not a legit DualShock can do it's thing (I guess)
+static char actAlign[6];
+static int actuators;
+
+static void loadModules();
+static int waitPadReady(int port, int slot);
+static int initializePad(int port, int slot);
+
+enum SlideCommand probe_gamepad(){
+
+  
+  
+};
+
+static void loadModules(){
+  int module;
+
+  module = SifLoadModule("rom0:SIO2MAN", 0, NULL);
+
+  if(module < 0){
+    // We don't have the scr_printf() here, so we have no error handling :)
+    SleepThread();
+  };
+  module = SifLoadModule("rom0:PADMAN", 0, NULL);
+  if(module < 0) SleepThread();
+  
+};
+
+static int waitPadReady(int port, int slot){
+  int state;
+  int lastState;
+  char stateString[16];
+
+  state = padGetState(port, slot);
+  lastState = -1;
+  while((state != PAD_STATE_STABLE) && (state != PAD_STATE_FINDCTP1)) {
+    if(state != lastState) padStateInt2String(state, stateString);
+    // Again, no need for error handling :)
+    lastState = state;
+    state=padGetState(port, slot);
+
+    return 0;
+  };
+};
+
+static int initializePad(int port, int slod){
+  int ret;
+  int modes;
+  int i;
+
+  waitPadReady(port, slot);
+
+  modes = padInfoMode(port, slot, PAD_MODETABLE, -1);
+
+  // I do not know if this has a side effect, so we keep it, even if we don't do anything with it
+  padInfoMode(port, slot, PAD_MODECURID, 0);
+
+  if(modes == 0) return 1;
+
+  i = 0;
+  do {
+    if(padInfoMode(port, slot, PAD_MODETABLE, i) == PAD_TYPE_DUALSHOCK) break;
+    i++;
+  } while(i < modes);
+
+  if(i >= modes) return 1;
+
+  // For DualShock mode setting
+  ret = padInfoMode(port, slot, PAD_MODECUREXID, 0);
+
+  if(ret == 0) return 1;
+
+  padSetMainMode(port, slot, PAD_MMODE_DUALSHOCK, PAD_MMODE_LOCK);
+
+  // Again, no clue on side effects
+  waitPadReady(port, slot);
+  padInfoPressMode(port, slot);
+
+  waitPadReady(port, slot);
+  padEnterPressMode(port, slot);
+
+  waitPadReady(port, slot);
+  actuators = padInfoAct(port, slot, -1, 0);
+
+  if(actuators != 0) {
+    actAlign[0] = 0;
+    actAlign[1] = 1;
+    actAlign[2] = 0xff;
+    actAlign[3] = 0xff;
+    actAlign[4] = 0xff;
+    actAlign[5] = 0xff;
+
+    waitPadReady(port, slot);
+    padSetActAlign(port, slot, actAlign);
+  }; // No need for the else since no debugging :)
+
+  waitPadReady(port, slot);
+
+  return 1;
+};
