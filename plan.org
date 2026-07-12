@@ -18,7 +18,7 @@
       }
 
     } while(input != QUIT_PRESENTATION)
-    
+n    
     return 0;
   }
 #+end_src
@@ -330,4 +330,67 @@
 
  We'll get back to this in due time. Meanwhile, look at the source!
 
+---
+
+ Welcome back!
+
+ The program is quite simple, really. We just modified the ~pad.c~ example so it pops out a little enum of ours in the other and, rather than showing us on the screen.
+
+ Rather, it does show, if you are working with an older commit (I recommend you look at it!). I say this since we'll be modifying it heavily so we can bolt inside the MPEG subsystem and finaly work everything out.
+
+ Onward!
+ 
 ** Frames, decompression and the GS
+
+ This was my first prototype, or rather, an AI's first prototype. I was probing and prodding around the examples and let the AI (Gemini, in this case), do it's thing and modify it first.
+
+ It was a proof of concept, in some quite binary terms: if it's somewhat doable in a timely manner, the AI will be able to do it (and so will I); if the AI won't, well, I'll need to look at other venues to awe the audience.
+
+ The machine was able to pop a MVP, but there were problems in the tail end of the decompression. But since the context had rotted away, I decided to start over (as it should have been).
+
+ So, here we are!
+
+*** IPU, DMA, GS
+
+ We did a little of work with remote procedure calls in the IOP. I suspect it might clash with the DMA in here, but one thing at a time.
+
+ For the MPEG2 decompression to work and show something to the screen, there's a three way dance that must happen:
+ 1) MPEG data from the main memory (so the EE owns it) must be sent to the IPU;
+ 2) For this to happen, we must ask the DMA to configure the bus in such way that we can transfer the data EE -> IPU;
+ 3) Neither the author, nor I, knows if the data is coming from the IPU to the main memory or it's going from the IPU to the GS. Either way, we must configure the DMA so the GS can get the data;
+
+ And when the GS gets the image data, it can draw the slide. Neat!
+
+*** Breaking it down in little pieces
+
+ I didn't bother to look at the MPEG standard more than what was strictly necessary to make this work. So, pardon me if I get anything wrong.
+
+ But, for the IPU to do it's thing, we must pipe the data in packets (with it's own logic) and, after that, the IPU starts pumping 16*16 pixels macroblocks, which are used to draw the slide.
+
+ ---
+
+ I did ask Gemini to walk me around the math involved to send packets and it's not that awful. The problem, I feel, has to do with the quirks of the hardware, how much manual manipulation we are doing, as well as some size mismatches.
+
+ I'll skip the IPU as a whole due to this quirky behavior that I can't pin down if it's either PCSX2 (little possibility), the libmpeg implementation (somewhat possible), the internal quirks of the IPU (somewhat possible) or the communication, packing, alignment, packet construction and looping over the data->IPU and IPU->GS as it changes size when decompressing, mincing and dicing (quite high possibility).
+
+ There's still quite some complexity to work with, but the math is more direct and so is the mental model. The thing is I did use Gemini again, this time to do the packet forming and lower level calls to the GS. Keep in mind that more sensible developers at the time, such as those in commercial studios, would have either:
+ - A development system with manuals and Sony's support;
+ - Be the licensees of engines that bothered to encapsulate this ball of yarn and only concerned themselves with the engine itself, not the underlying hardware.
+
+ I'm not more clever than a whole team at Epic or Naughty Dog, so I need to call some external help. I do feel as well that this is a symptom of a few things:
+ - Comparing to how DOOM was handled, we can access better information, with a lot of sites either backed up, still active or migrated. This is specially true to forums and wikis;
+ - As such, quite some DOOM information was extended and modernized, with great tools;
+
+ The worst part of all this is how the PS2 *is* (as time of writing, July 2026) the most sold console in history, and have a hunch that there were more people that interacted with a PS2 than those that interacted with the whole DOOM franchise, mostly to how many people had personal computers way back when vs. people with PS2s.
+
+ I'm glad that we can have such a tool that can help do some heavy lifting on some opaque old problem, but I like to treat this more as archeology (and, by definition, /rediscovering lost knowledge/) than some actual advancing of the frontier of knowledge. Being more direct: we didn't really need this to happen and I'm glad that we have great people and hackers that can make all this work /pro bono/.
+
+ If I keep going on, I'll start rambling (even more!) about how Sony could have make public quite some stuff. Not the BIOS', not the games, not the schematics, but the manuals and tools used to make the games. But no, if there's some profit to be extracted on some old software in the form of a digital console emulated release, they'll take a lesson from Nintendo's book.
+
+*** Pivoting
+
+ We must say thanks to STB and the great header-only libraries. In this case, the image library that embeds zlib and let's us ship compacted PNGs intead of doing weird stuff with MPEG.
+
+ Gemini popped a little program that's incorporated in the final presentation. It handles sending the image, so the packeting logic, wrangling the DMA and such are nicely encapsulated in there. It used the MPEG smaple as source.
+
+ 

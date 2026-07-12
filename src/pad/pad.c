@@ -194,7 +194,7 @@ main()
     u32 old_pad = 0;
     u32 new_pad;
 
-    sceSifInitRpc(0);
+    //    sceSifInitRpc(0);
     init_scr();
 
     //    scr_scr_clear(); scr_printf("Hello, World!\n");
