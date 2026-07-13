@@ -18,7 +18,7 @@
       }
 
     } while(input != QUIT_PRESENTATION)
-n    
+    
     return 0;
   }
 #+end_src
@@ -392,5 +392,77 @@ n
  We must say thanks to STB and the great header-only libraries. In this case, the image library that embeds zlib and let's us ship compacted PNGs intead of doing weird stuff with MPEG.
 
  Gemini popped a little program that's incorporated in the final presentation. It handles sending the image, so the packeting logic, wrangling the DMA and such are nicely encapsulated in there. It used the MPEG smaple as source.
+
+ Take a look at ~png_test.c~ so you get the gist.
+
+ We'll have to do two things now:
+ - Fix our slide struct, so it's compatible with the new function;
+ - Redo the slide and code generation, as they are PNGs now, as well as the new structs.
+
+ That won't be that hard, since the slide structs are something like:
+ 
+#+begin_src C
+  typedef struct {
+
+    unsigned char* payload;
+    int size;
+
+  } Slide;
+
+#+end_src
+
+ It just needs to match the STB Image interface.
+
+ And for us to create the slide deck, there just needs to have this in the header:
+ 
+#+begin_src C
+
+  alignas(64) const unsigned char slide_01_png[] = {
+    #embed "slide_01.png"
+  };
+
+  Slide presentation [] = {
+     {
+        .payload = slide_01_png,
+        .size = sizeof(slide_01_png,
+     },
+    
+   };
+#+end_src
+
+ So, we change our little Python script to this:
+ 
+#+begin_src python
+  from pathlib import Path
+
+  output_path = Path(r'./output')
+
+  image_paths = [image for image in output_path.iterdir() if 'png' in image.name]
+
+  with open('slides.h', 'w') as slide_header:
+
+      slide_header.write("""
+      typedef struct {
+        unsigned char* payload;
+        int size;
+      } Slide;
+      """)
+      
+      for image_number, image in enumerate(image_paths):
+          slide_header.write(f"alignas(64) const unsigned char slide_{image_number} [] = ")
+          slide_header.write("{\n")
+          slide_header.write(f'  #embed "{str(image.absolute())}"\n')
+          slide_header.write("};\n\n")
+
+      slide_header.write("Slide slides[] = {\n")
+      for image_number, _ in enumerate(image_paths):
+          slide_header.write("  {\n")
+          slide_header.write(f"    .payload = slide_{image_number}, \n")
+          slide_header.write(f"    .size = sizeof(slide_{image_number}),")
+          slide_header.write("  },\n")
+      slide_header.write("};")
+#+end_src
+
+ The final version is in the slides directory.
 
  

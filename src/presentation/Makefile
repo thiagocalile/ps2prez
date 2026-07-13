@@ -6,9 +6,9 @@
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
 
-EE_BIN = pad_example.elf
-EE_OBJS = pad.o
-EE_LIBS = -ldebug -lpad -lc
+EE_BIN = presentation.elf
+EE_OBJS = presentation.o
+EE_LIBS = -ldebug -lpad -lc -ldraw -lgraph -ldma -lpacket
 
 all: $(EE_BIN)
 
